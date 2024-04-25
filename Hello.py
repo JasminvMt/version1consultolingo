@@ -13,39 +13,65 @@
 # limitations under the License.
 
 import streamlit as st
-from streamlit.logger import get_logger
+import requests
+import random
 
-LOGGER = get_logger(__name__)
+# Function to fetch population data
+def fetch_population_data():
+    url = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/tps00001?format=JSON&time=2023&geo=BE&geo=BG&geo=CZ&geo=DK&geo=DE&geo=EE&geo=IE&geo=EL&geo=ES&geo=FR&geo=HR&geo=IT&geo=CY&geo=LV&geo=LT&geo=LU&geo=HU&geo=MT&geo=NL&geo=AT&geo=PL&geo=PT&geo=RO&geo=SI&geo=SK&geo=FI&geo=SE&indic_de=JAN&lang=en"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        population_values = data['value']
+        geo_index_to_code = {str(v): k for k, v in data['dimension']['geo']['category']['index'].items()}
+        geo_code_to_name = data['dimension']['geo']['category']['label']
+        population_data = {geo_code_to_name[geo_index_to_code[k]]: v for k, v in population_values.items() if k in geo_index_to_code}
+        return population_data
+    else:
+        st.error(f"Failed to retrieve data: {response.status_code}")
+        return {}
 
+# Function to generate a question
+def generate_question(population_data):
+    if not population_data:
+        return "No data available to generate a question", [], None
+    correct_country, correct_population = random.choice(list(population_data.items()))
+    incorrect_answers = set()
+    while len(incorrect_answers) < 3:
+        method = random.choice(['percent', 'fixed', 'factor'])
+        if method == 'percent':
+            adjustment = random.choice([0.9, 0.95, 1.05, 1.1])
+            new_population = int(correct_population * adjustment)
+        elif method == 'fixed':
+            adjustment = random.randint(100000, 500000)
+            new_population = correct_population + random.choice([-1, 1]) * adjustment
+        elif method == 'factor':
+            adjustment = random.choice([0.85, 0.9, 0.95, 1.05, 1.1, 1.2])
+            new_population = int(correct_population * adjustment)
+        if new_population != correct_population:
+            incorrect_answers.add(new_population)
+    options = list(incorrect_answers) + [correct_population]
+    random.shuffle(options)
+    question = f"What is the population of {correct_country}?"
+    return question, options, correct_population
 
-def run():
-    st.set_page_config(
-        page_title="Hello",
-        page_icon="👋",
-    )
+# Streamlit interface
+st.title('Population Quiz')
+if 'data' not in st.session_state:
+    st.session_state.data = fetch_population_data()
 
-    st.write("# Welcome to Streamlit! 👋")
-
-    st.sidebar.success("Select a demo above.")
-
-    st.markdown(
-        """
-        Streamlit is an open-source app framework built specifically for
-        Machine Learning and Data Science projects.
-        **👈 Select a demo from the sidebar** to see some examples
-        of what Streamlit can do!
-        ### Want to learn more?
-        - Check out [streamlit.io](https://streamlit.io)
-        - Jump into our [documentation](https://docs.streamlit.io)
-        - Ask a question in our [community
-          forums](https://discuss.streamlit.io)
-        ### See more complex demos
-        - Use a neural net to [analyze the Udacity Self-driving Car Image
-          Dataset](https://github.com/streamlit/demo-self-driving)
-        - Explore a [New York City rideshare dataset](https://github.com/streamlit/demo-uber-nyc-pickups)
-    """
-    )
-
-
-if __name__ == "__main__":
-    run()
+if st.session_state.data:
+    question, options, correct_answer = generate_question(st.session_state.data)
+    st.subheader(question)
+    option_indices = [f"{idx + 1}: {option}" for idx, option in enumerate(options)]
+    user_choice = st.radio("Choose the correct answer:", option_indices)
+    
+    if st.button("Submit"):
+        if int(user_choice.split(': ')[0]) == options.index(correct_answer) + 1:
+            st.success("Correct!")
+        else:
+            st.error("Incorrect!")
+        st.write(f"The correct population is {correct_answer}.")
+else:
+    st.error("Unable to load population data.")
+    
